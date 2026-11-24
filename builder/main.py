@@ -4,24 +4,46 @@ import os
 import zipfile
 from pathlib import Path
 
-from plugins.plugin_tools.plugin_types import CommandContext, PluginApi
 from plugins.plugin_tools.lib.base import base_destructor
+from plugins.plugin_tools.plugin_types import CommandContext, PluginApi
 from .schema import Meta, is_valid
 from .utils import fake_post, is_blacklisted
-
+from .cfg_v2 import cfg_parse
 
 class BuildError(Exception):
     pass
 
+class PluginArgumentParser(arg.ArgumentParser):
+    def error(self, message: str):
+        raise ValueError(f"error: {message}")
 
-def zipping(files: list[Path], cfg: Meta, out: Path) -> None:
+    def exit(self, status=0, message=None):
+        if message:
+            print(message)
+
+def zipping(files: list[Path], cfg: Meta, out: Path, args: arg.Namespace, api: PluginApi) -> None:
+    if args.cfg_v2:
+        data = api["data"]
+        post = api["post"]
+        if not "src" in cfg:
+            post("[zipping]: not 'src' in cfg", data)
+            return
+        for i, it in enumerate(cfg["src"]):
+            obj = cfg["__path"] / Path(it)
+            if not isinstance(it, str):
+                post(f"[zipping]: cfg['src'][{i}] is {type(it)}", data)
+                return
+            if not obj.exists():
+                post(f"[zipping]: cfg['src'][{i}]({cfg['__path'].resolve().parent}) is not exist", data)
+                return
+            files.append(obj)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(
             {
                 "name": cfg["name"],
                 "config": cfg["config"]
             }, indent=4)
-        )
+                    )
         for file_path in files:
             path = Path(file_path)
 
@@ -55,22 +77,25 @@ def search_config(list_file: list[Path]) -> dict | BuildError:
             is_cfg_valid = is_valid(cfg, Meta)
             if not is_cfg_valid:
                 return BuildError("[search_config]: invalid config")
+            cfg["__path"] = it.resolve().parent
             del list_file[i]  # del cfg file
             return cfg
     return BuildError("[search_config]: 'plugin.json' not found")
 
 
-parser = arg.ArgumentParser()
+parser = PluginArgumentParser()
+parser.add_argument("--cfg-v2", action="store_true", help="cfg v2 file")
 parser.add_argument("objects", nargs="+", type=Path, help="input file/directory")
 parser.add_argument("-o", "--output", required=True, help="output file(zip format)")
+
 
 def destructor(plugin_space: dict) -> None:
     base_destructor(__package__)
 
 def main(api: PluginApi, command_context: CommandContext, plugin_space: dict) -> None:
     if not api:
-        data = None
-        post = fake_post
+        data = api["data"] = None
+        post = api["data"] = fake_post
     else:
         data = api["data"]
         post = api["post"]
@@ -81,5 +106,6 @@ def main(api: PluginApi, command_context: CommandContext, plugin_space: dict) ->
     if isinstance(cfg, BuildError):
         post(str(cfg), data)
         return
-    zipping(args.objects, cfg, args.output)
-    print("done")
+    if args.cfg_v2:
+        cfg_parse(args.objects, cfg, api)
+    zipping(args.objects, cfg, args.output, args, api)

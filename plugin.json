@@ -3,6 +3,7 @@
     "title": "builder",
     "description": "ppm package builder",
     "tags": [],
+    "src": ["builder"],
     "blacklist": ["__pycache__", "*.pyc", ".git"],
     "config": {"file": "builder/__init__.py", "cache": true, "api": true}
 }

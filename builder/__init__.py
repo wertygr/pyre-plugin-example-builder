@@ -1,2 +1,6 @@
-from .main import main
-__all__ = ["main"]
+from .main import main, destructor
+
+__all__ = [
+    "main",
+    "destructor"
+]
