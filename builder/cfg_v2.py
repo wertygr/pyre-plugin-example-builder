@@ -16,6 +16,6 @@ def cfg_parse(files: list[Path], cfg: Meta, api: PluginApi) -> None:
             post(f"[zipping]: cfg['src'][{i}] is {type(it)}", data)
             return
         if not obj.exists():
-            post(f"[zipping]: cfg['src'][{i}]({cfg['__path'].resolve().parent}) is not exist", data)
+            post(f"[zipping]: cfg['src'][{i}]({obj.resolve().parent}) is not exist", data)
             return
         files.append(obj)

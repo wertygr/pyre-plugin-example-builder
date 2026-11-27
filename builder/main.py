@@ -22,21 +22,6 @@ class PluginArgumentParser(arg.ArgumentParser):
             print(message)
 
 def zipping(files: list[Path], cfg: Meta, out: Path, args: arg.Namespace, api: PluginApi) -> None:
-    if args.cfg_v2:
-        data = api["data"]
-        post = api["post"]
-        if not "src" in cfg:
-            post("[zipping]: not 'src' in cfg", data)
-            return
-        for i, it in enumerate(cfg["src"]):
-            obj = cfg["__path"] / Path(it)
-            if not isinstance(it, str):
-                post(f"[zipping]: cfg['src'][{i}] is {type(it)}", data)
-                return
-            if not obj.exists():
-                post(f"[zipping]: cfg['src'][{i}]({cfg['__path'].resolve().parent}) is not exist", data)
-                return
-            files.append(obj)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(
             {
