@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import TypedDict, Any, is_typeddict, get_type_hints, get_origin, get_args
 
 
@@ -12,8 +13,17 @@ class Meta(TypedDict):
     title: str
     description: str
     tags: list[str]
+    src: list[str]
     blacklist: list[str]
     config: Config
+
+
+class Data:
+    def __init__(self, cfg: Meta, out: Path, path: Path) -> None:
+        self.cfg = cfg
+        self.path = path
+        self.out = out
+        self.files: list[Path] = []
 
 def is_valid(data: Any, schema: Any) -> bool:
     if is_typeddict(schema):

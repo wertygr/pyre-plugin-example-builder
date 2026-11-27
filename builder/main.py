@@ -1,4 +1,3 @@
-import argparse as arg
 import json
 import os
 import zipfile
@@ -6,33 +5,25 @@ from pathlib import Path
 
 from plugins.plugin_tools.lib.base import base_destructor
 from plugins.plugin_tools.plugin_types import CommandContext, PluginApi
-from .schema import Meta, is_valid
-from .utils import fake_post, is_blacklisted
+from .schema import Meta, is_valid, Data
+from .utils import is_blacklisted
 from .cfg_v2 import cfg_parse
 
 class BuildError(Exception):
     pass
 
-class PluginArgumentParser(arg.ArgumentParser):
-    def error(self, message: str):
-        raise ValueError(f"error: {message}")
-
-    def exit(self, status=0, message=None):
-        if message:
-            print(message)
-
-def zipping(files: list[Path], cfg: Meta, out: Path, args: arg.Namespace, api: PluginApi) -> None:
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+def zipping(b_data: Data) -> None:
+    with zipfile.ZipFile(b_data.out, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(
             {
-                "name": cfg["name"],
-                "config": cfg["config"]
+                "name": b_data.cfg["name"],
+                "config": b_data.cfg["config"]
             }, indent=4)
                     )
-        for file_path in files:
+        for file_path in b_data.files:
             path = Path(file_path)
 
-            if not path.exists() or is_blacklisted(path, cfg["blacklist"]):
+            if not path.exists() or is_blacklisted(path, b_data.cfg["blacklist"]):
                 continue
 
             if path.is_file():
@@ -42,7 +33,7 @@ def zipping(files: list[Path], cfg: Meta, out: Path, args: arg.Namespace, api: P
                 for root, dirs, filenames in os.walk(path):
                     root_path = Path(root)
 
-                    dirs[:] = [d for d in dirs if not is_blacklisted(root_path / d, cfg["blacklist"])]
+                    dirs[:] = [d for d in dirs if not is_blacklisted(root_path / d, b_data.cfg["blacklist"])]
 
                     if root_path != path:
                         arcname = Path(path.name) / root_path.relative_to(path)
@@ -50,47 +41,45 @@ def zipping(files: list[Path], cfg: Meta, out: Path, args: arg.Namespace, api: P
 
                     for filename in filenames:
                         item = root_path / filename
-                        if not is_blacklisted(item, cfg["blacklist"]):
+                        if not is_blacklisted(item, b_data.cfg["blacklist"]):
                             arcname = Path(path.name) / item.relative_to(path)
                             zf.write(item, arcname=arcname)
 
 
-def search_config(list_file: list[Path]) -> dict | BuildError:
-    for i, it in enumerate(list_file):
-        if it.is_file() and it.name == "plugin.json":
-            cfg = json.loads(it.read_text())
-            is_cfg_valid = is_valid(cfg, Meta)
-            if not is_cfg_valid:
-                return BuildError("[search_config]: invalid config")
-            cfg["__path"] = it.resolve().parent
-            del list_file[i]  # del cfg file
-            return cfg
-    return BuildError("[search_config]: 'plugin.json' not found")
-
-
-parser = PluginArgumentParser()
-parser.add_argument("--cfg-v2", action="store_true", help="cfg v2 file")
-parser.add_argument("objects", nargs="+", type=Path, help="input file/directory")
-parser.add_argument("-o", "--output", required=True, help="output file(zip format)")
-
+def search_config(cfg_file: Path) -> Meta | BuildError:
+    if cfg_file.is_file() and cfg_file.exists():
+        cfg = json.loads(cfg_file.read_text())
+        is_cfg_valid = is_valid(cfg, Meta)
+        if not is_cfg_valid:
+            return BuildError("[search_config]: invalid config")
+        return cfg
+    return BuildError("[search_config]: Config not found or is dir")
 
 def destructor(plugin_space: dict) -> None:
     base_destructor(__package__)
 
 def main(api: PluginApi, command_context: CommandContext, plugin_space: dict) -> None:
-    if not api:
-        data = api["data"] = None
-        post = api["data"] = fake_post
-    else:
-        data = api["data"]
-        post = api["post"]
+    data = api["data"]
+    post = api["post"]
 
-    args = parser.parse_args(command_context["argv"][1:])
+    if command_context["argc"] > 3:
+        post("[builder::main]: not enough arguments", data)
 
-    cfg = search_config(args.objects)
+    # build <path> <out_path>
+    #  0      1       2
+    path = Path(command_context["argv"][1])
+    cfg = search_config(path)
+
+    out = Path(command_context["argv"][2])
     if isinstance(cfg, BuildError):
         post(str(cfg), data)
         return
-    if args.cfg_v2:
-        cfg_parse(args.objects, cfg, api)
-    zipping(args.objects, cfg, args.output, args, api)
+
+    b_data = Data(
+        cfg=cfg,
+        path=path,
+        out=out
+    )
+
+    cfg_parse(b_data, api)
+    zipping(b_data)
