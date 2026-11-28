@@ -62,8 +62,9 @@ def main(api: PluginApi, command_context: CommandContext, plugin_space: dict) ->
     data = api["data"]
     post = api["post"]
 
-    if command_context["argc"] > 3:
+    if command_context["argc"] < 3:
         post("[builder::main]: not enough arguments", data)
+        return 
 
     # build <path> <out_path>
     #  0      1       2
